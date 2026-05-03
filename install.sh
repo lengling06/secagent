@@ -21,7 +21,7 @@
 set -euo pipefail
 
 # ---------- config ----------
-REPO_DEFAULT="https://github.com/CHANGE-ME/secagent.git"   # ←—— 改成你的仓库 URL
+REPO_DEFAULT="https://github.com/lengling06/secagent"   # ←—— 改成你的仓库 URL
 BRANCH_DEFAULT="main"
 
 REPO="${SECAGENT_REPO:-$REPO_DEFAULT}"
