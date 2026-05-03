@@ -1,25 +1,63 @@
 # SecAgent — 使用指南
 
-> 三行命令开跑 → 自然语言对话 → 拿产物。下面按"先用起来"再"调细节"的顺序来。
+> 一条命令装好 → 自然语言对话 → 拿产物。下面按"先用起来"再"调细节"的顺序来。
 
 ---
 
 ## 1. 三行命令开跑
 
+**A. 装**（Linux / macOS / WSL2，自动装 python + pipx + node + docker，跳过已装的）：
+
 ```bash
-# A. 装包
-cd secagent
-pip install -e .                       # 一次
+# 推送到 GitHub 后:
+curl -fsSL https://raw.githubusercontent.com/CHANGE-ME/secagent/main/install.sh | bash
 
-# B. 配置 LLM (交互式向导)
-secagent init                          # 一次
-                                       # 选 LLM 类型 / 填 base_url / 填 api_key
-                                       # 自动测连接 / 探沙箱 / 建默认 engagement
-
-# C. 直接进 chat
-secagent                               # 默认 engagement，刮板模式
-# 或 secagent target https://talkai.info/   # 直接给目标
+# 或本地（在仓库目录里）:
+bash install.sh
 ```
+
+**B. 配 LLM**（一次性）：
+
+```bash
+secagent init
+```
+
+**C. 跑**：
+
+```bash
+secagent target https://example.com/        # 给目标
+# 或
+secagent                                     # 默认 engagement，对话里贴 URL
+```
+
+完事。下面是细节。
+
+---
+
+## 2. install.sh 它干了什么
+
+可以放心 `curl | bash`，因为它就这几件事：
+
+| 步骤 | 检测 | 动作 |
+|---|---|---|
+| 1 | `python3` ≥ 3.10 | 缺则装 `python3 python3-venv python3-pip` |
+| 2 | `pipx` | 缺则装（apt/dnf/brew/pip） |
+| 3 | `node` ≥ 20 | 缺则装 nodesource 20 |
+| 4 | `docker` 能跑 | 缺则 `get.docker.com` + 加你到 docker 组 |
+| 5 | nmap + dig | 缺则装；有 Go 就顺手装 subfinder/httpx/dnsx |
+| 6 | secagent | `pipx install` 本地 checkout 或 git URL |
+
+**跳过部分组件：**
+
+```bash
+SKIP_DOCKER=1 SKIP_RECON=1 bash install.sh   # 只装 python+node+secagent
+SKIP_NODE=1 bash install.sh                   # 自己管 node
+```
+
+**非交互（CI / curl|bash 内）：** 自动按默认值前进，不卡问。
+**已安装的不动**：每个 `ensure_*` 函数先 `command -v` 检测。
+
+---
 
 `secagent init` 长这样（互动）：
 
@@ -308,44 +346,28 @@ REPL 启动看到 `[MCP] connected: js-reverse` / `[MCP] connected: playwright` 
 
 ---
 
-## 9. Linux VM 部署 checklist
+## 9. Linux VM 部署 — 全部一行
+
+之前手动那一堆 apt-get / nodesource / docker 现在都让 install.sh 干了。VM 上只要：
 
 ```bash
-# 1. 系统 + Python
-sudo apt-get update
-sudo apt-get install -y python3 python3-venv python3-pip git curl
+# 1. 装（Ubuntu/Debian/Fedora/Arch/macOS 都行）
+curl -fsSL https://raw.githubusercontent.com/<你>/secagent/main/install.sh | bash
 
-# 2. Node (js_execute + MCP 都要)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# 3. Docker (js_execute 沙箱推荐用 docker 模式)
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER && newgrp docker
-docker pull node:20-alpine
-
-# 4. 可选：ProjectDiscovery 工具链 (recon)
-sudo apt-get install -y nmap dnsutils
-curl -LO https://go.dev/dl/go1.22.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc
-source ~/.bashrc
-go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
-
-# 5. SecAgent
-git clone <你的仓库> ~/secagent
-cd ~/secagent
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
-
-# 6. 一次性配置
+# 2. 配 LLM
 secagent init
 
-# 7. 跑
+# 3. 开干
 secagent target https://your-target.example/
 ```
+
+如果不想推 GitHub，把 `secagent/` 整个目录拷到 VM 后：
+
+```bash
+cd ~/secagent && bash install.sh
+```
+
+**完事**。docker / node / pipx 都自动处理；缺什么装什么；已装的不动。
 
 ---
 

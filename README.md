@@ -5,24 +5,34 @@
 
 ## 30 秒开跑
 
+**装**（Linux / macOS / WSL2，自动装 python + pipx + node + docker）：
+
 ```bash
-# 1. 装包
-pip install -e .              # 或 pipx install <repo>
+curl -fsSL https://raw.githubusercontent.com/CHANGE-ME/secagent/main/install.sh | bash
+```
 
-# 2. 一次性配置 LLM (交互式向导)
-secagent init
+或在仓库目录里本地装：
 
-# 3. 直接进 chat
-secagent
-> 帮我逆向 https://talkai.info/ 的登录请求加密参数
+```bash
+cd secagent && bash install.sh
+```
+
+**用**：
+
+```bash
+secagent init                         # 一次性，选 LLM 类型 + 填 key
+secagent target https://example.com/  # 给目标 URL 直接进 chat
+```
+
+或：
+
+```bash
+secagent                              # 进默认 engagement
+> 帮我逆向 https://example.com/ 的登录请求加密参数
 [agent 自动建专用 engagement → 跑 SOP → 给产物]
 ```
 
-或者直接给目标 URL 一步进入：
-
-```bash
-secagent target https://talkai.info/
-```
+完整说明：[USAGE.md](USAGE.md)。
 
 ## 它能干什么
 
