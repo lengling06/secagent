@@ -1,0 +1,55 @@
+{
+  "_README": [
+    "Working template for the JS-reverse + browser-automation use case.",
+    "Copy this file over engagements/<name>/mcp.json to enable.",
+    "",
+    "How keys work:",
+    "  command/args  — how to spawn the MCP server as a stdio subprocess.",
+    "  env           — env vars passed to the subprocess (optional).",
+    "  target_keys   — per-tool, which arg keys hold a host/URL the scope checker",
+    "                  should validate. Without this, MCP tools bypass scope!",
+    "  approval_required — tools whose operation always needs ask_user y/N.",
+    "",
+    "Tool names below are conservative guesses; after first run, look at the",
+    "'Tools registered:' banner in the REPL to see the actual names exposed",
+    "by your MCP version, and adjust target_keys / approval_required to match.",
+    "",
+    "All keys starting with _ are ignored by the manager."
+  ],
+
+  "mcpServers": {
+    "js-reverse": {
+      "command": "npx",
+      "args": ["-y", "js-reverse-mcp"],
+      "_note": "If you have it cloned locally, prefer: command: 'node', args: ['/abs/path/to/js-reverse-mcp/dist/index.js']",
+      "target_keys": {
+        "navigate":          ["url"],
+        "new_page":          ["url"],
+        "navigate_page":     ["url"],
+        "fetch_resource":    ["url"]
+      },
+      "approval_required": [
+        "evaluate_script",
+        "inject_before_load",
+        "trace_function",
+        "patch_function"
+      ]
+    },
+
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
+      "_note": "First run will download browser binaries (~200MB).",
+      "target_keys": {
+        "browser_navigate":      ["url"],
+        "browser_navigate_back": [],
+        "browser_open":          ["url"]
+      },
+      "approval_required": [
+        "browser_evaluate",
+        "browser_file_upload",
+        "browser_install"
+      ]
+    }
+  }
+}

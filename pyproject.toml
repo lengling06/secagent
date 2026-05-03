@@ -1,0 +1,37 @@
+[project]
+name = "secagent"
+version = "0.1.0"
+description = "Security-domain agent: scope-bound, engagement-scoped, MCP-aggregated."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "anthropic>=0.40.0",
+    "openai>=1.40.0",          # 兼容协议（DeepSeek/Kimi/MiniMax 等）
+    "httpx>=0.27.0",
+    "pyyaml>=6.0",
+    "rich>=13.0.0",            # REPL 漂亮输出
+    "prompt_toolkit>=3.0.0",   # REPL 输入
+    "mcp>=1.0.0",              # 官方 MCP Python SDK
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+secagent = "secagent.main:cli"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["secagent*"]
+
+[tool.setuptools.package-data]
+secagent = ["prompts/*.md"]

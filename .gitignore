@@ -1,0 +1,22 @@
+# 真实 engagement 数据绝对不能进 git
+engagements/*
+!engagements/example/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# 凭证
+.env
+*.key
+*.pem
+mykeys.py

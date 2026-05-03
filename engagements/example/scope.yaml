@@ -1,0 +1,78 @@
+# Example scope file. Replace EVERYTHING before using on a real engagement.
+#
+# Treat this file as the legal document that gates the agent. The Handler
+# will refuse any tool call whose target is not authorized here.
+
+engagement: example
+authorized_by: "Demo User <demo@local>"
+authorized_at: "2026-05-01"
+expires_at: "2099-12-31"   # demo only; real engagements: <= 30 days
+
+# What the agent IS allowed to touch.
+in_scope:
+  domains:
+    - "*.example.com"
+    - "demo.testfire.net"
+  ips:
+    - "127.0.0.1"
+    - "10.0.0.0/24"
+  apis:
+    - "https://api.example.com/v1/"
+
+# Carved out from in_scope. Agent will never probe these.
+out_of_scope:
+  domains:
+    - "admin.example.com"
+    - "billing.example.com"
+  ips:
+    - "127.0.0.1/32"   # if you wanted to forbid local for some reason
+
+# Ops the agent may execute.
+allowed_operations:
+  - http_request
+  - http_probe
+  - dns_resolve
+  - port_scan
+  - subdomain_enum
+  - js_reverse
+  - js_execute              # local Node sandbox to verify reverse-engineered algos
+  - har_analyze             # parse HAR exports from Chrome DevTools / Burp
+  - code_diff               # compare two JS bundle versions
+  - vulnerability_scan
+  - browser_automation
+  - shell
+  - file_read
+  - file_write
+  - ask_user
+  - add_finding
+
+# Hard NO — not even with approval.
+forbidden_operations:
+  - dos
+  - bruteforce_password
+  - data_exfiltration
+  - destructive_write
+  - phishing
+
+# These need an explicit ask_user yes before running.
+require_approval:
+  - sql_injection_payload
+  - rce_payload
+  - file_upload_test
+  - high_qps_scan
+  - js_execute                          # arbitrary local Node code — always confirm
+  - js_reverse__evaluate_script         # MCP tool naming convention
+  - js_reverse__inject_before_load
+  - js_reverse__trace_function
+
+# Network constraints (enforced by tools where applicable).
+network:
+  proxy: null                                  # e.g. "http://127.0.0.1:8080" for Burp
+  user_agent_tag: "SecAgent/example"
+  rate_limit_per_second: 5
+
+# Notes (free-form; agent reads these as additional context)
+notes: |
+  Demo engagement. testfire.net is Watchfire's intentionally vulnerable demo;
+  example.com is reserved per RFC 2606 and never reachable. Use for dry-runs
+  only.

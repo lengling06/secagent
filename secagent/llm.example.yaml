@@ -1,0 +1,73 @@
+# SecAgent LLM configuration.
+#
+# Copy this file to one of:
+#   - <engagement_dir>/llm.yaml           — per-engagement override
+#   - ~/.secagent/llm.yaml                — your global default
+#
+# Then export the relevant API key envs (ANTHROPIC_API_KEY, DEEPSEEK_API_KEY,
+# YOUR_PROXY_KEY, ...) and run `secagent repl -e <name>`.
+
+# Pick which backend to use when no mixin and no --llm flag.
+default_backend: proxy_pool
+
+backends:
+  # ---------- direct providers ----------
+  claude_direct:
+    type: anthropic
+    model: claude-sonnet-4-5-20250929
+    api_key_env: ANTHROPIC_API_KEY
+    max_tokens: 8192
+
+  deepseek_chat:
+    type: openai_compat
+    model: deepseek-chat
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
+    max_tokens: 8192
+    temperature: 0.2
+
+  kimi:
+    type: openai_compat
+    model: kimi-k2-0905-preview
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: MOONSHOT_API_KEY
+
+  siliconflow:
+    type: openai_compat
+    model: deepseek-ai/DeepSeek-V3
+    base_url: https://api.siliconflow.cn/v1
+    api_key_env: SILICONFLOW_API_KEY
+
+  openrouter:
+    type: openai_compat
+    model: anthropic/claude-sonnet-4.5
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    default_headers:
+      HTTP-Referer: https://your.org
+      X-Title: SecAgent
+
+  # ---------- 你的第三方中转站示例 ----------
+  # 大多数中转站只需要换 base_url + key 就能用,
+  # 个别站要求自定义 header 或额外 body 字段。
+  proxy_pool:
+    type: openai_compat
+    model: claude-sonnet-4-5
+    base_url: https://your-proxy.example.com/v1
+    api_key_env: PROXY_API_KEY
+    # 一些中转站会要这种自定义 header
+    default_headers:
+      X-User-Id: secagent
+    # 一些中转站会要 body 里多塞字段(很少见,留接口)
+    extra_body: {}
+    max_tokens: 8192
+    timeout: 180
+    max_retries: 2
+
+# ---------- multi-backend routing ----------
+# Comment this section out if you don't want fallback behavior.
+mixin:
+  primary: proxy_pool
+  fallback_order:
+    - claude_direct
+    - deepseek_chat
