@@ -3,14 +3,14 @@
 # SecAgent installer
 # ============================================================================
 # Usage (after pushing to GitHub):
-#   curl -fsSL https://raw.githubusercontent.com/<you>/secagent/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/lengling06/secagent/master/install.sh | bash
 #
 # Local mode (when run from inside a checkout):
 #   bash install.sh
 #
 # Env vars / flags:
 #   SECAGENT_REPO=<git url>     pip-install from this URL instead of default
-#   SECAGENT_BRANCH=<branch>    git branch (default: main)
+#   SECAGENT_BRANCH=<branch>    git branch (default: master)
 #   SKIP_NODE=1                 do not auto-install Node (you handle it)
 #   SKIP_DOCKER=1               do not auto-install Docker (you handle it)
 #   SKIP_RECON=1                do not install nmap/dnsutils
@@ -21,8 +21,8 @@
 set -euo pipefail
 
 # ---------- config ----------
-REPO_DEFAULT="https://github.com/lengling06/secagent"   # ←—— 改成你的仓库 URL
-BRANCH_DEFAULT="main"
+REPO_DEFAULT="https://github.com/lengling06/secagent.git"
+BRANCH_DEFAULT="master"
 
 REPO="${SECAGENT_REPO:-$REPO_DEFAULT}"
 BRANCH="${SECAGENT_BRANCH:-$BRANCH_DEFAULT}"
@@ -254,11 +254,6 @@ install_secagent() {
         source="$script_dir"
         log "installing secagent from local checkout: $source"
     else
-        if [[ "$REPO" == *"CHANGE-ME"* ]]; then
-            die "install.sh has a placeholder repo URL. Either:
-   - edit REPO_DEFAULT in install.sh to your real GitHub URL, OR
-   - run with: SECAGENT_REPO=https://github.com/<you>/secagent.git bash install.sh"
-        fi
         source="git+$REPO@$BRANCH"
         log "installing secagent from $source"
     fi
@@ -272,8 +267,17 @@ post_install() {
     info ""
     info "next steps:"
     info "  1. open a new shell (or run: source ~/.bashrc)  ← so pipx PATH activates"
-    info "  2. secagent init       # configure LLM (one-time)"
-    info "  3. secagent target https://example.com/        # try it"
+    info "  2. secagent init                                 # configure LLM (one-time)"
+    info "  3. secagent target https://example.com/          # try it"
+    info ""
+    info "first run notes:"
+    info "  - secagent will auto-write ~/.secagent/engagements/<name>/mcp.json"
+    info "    pointing at chrome-devtools-mcp (Google official, observation-focused)"
+    info "  - first MCP startup pulls chrome-devtools-mcp@latest via npx (~150MB"
+    info "    incl. Chrome, 1-2 min one-time)"
+    info "  - if you have an OLD mcp.json from a previous version, run:"
+    info "      secagent doctor --fix"
+    info "    to migrate it (drops legacy js-reverse-mcp / playwright entries)"
     info ""
     info "if 'secagent: command not found' after step 1:"
     info "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
