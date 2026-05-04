@@ -85,6 +85,11 @@ def cli() -> int:
     p_llm = sub.add_parser("llm", help="Show resolved LLM config")
     p_llm.add_argument("--engagement", "-e", default=None)
 
+    # `secagent doctor` — diagnose + migrate config drift (mcp.json mainly)
+    p_doc = sub.add_parser("doctor", help="检查 ~/.secagent 下所有配置, 报告/修复过时项 (mcp.json)")
+    p_doc.add_argument("--fix", action="store_true",
+                       help="不仅报告, 自动应用迁移 (会备份原文件到 *.bak)")
+
     args = parser.parse_args()
 
     # Default subcommand: chat
@@ -228,8 +233,41 @@ def cli() -> int:
                 print(f"  - {name}: type={b.get('type')} model={b.get('model')} base_url={b.get('base_url','-')}")
             return 0
 
+    # ============================================================
+    # doctor — scan all engagements for config drift
+    # ============================================================
+    if args.cmd == "doctor":
+        from secagent.cli.bootstrap import (
+            apply_mcp_migrations,
+            diagnose_mcp_config,
+            user_engagements_dir,
+        )
+        engs = sorted(user_engagements_dir().glob("*"))
+        engs = [e for e in engs if e.is_dir()]
+        if not engs:
+            print("(no engagements yet under ~/.secagent/engagements/)")
+            return 0
+
+        any_issue = False
+        for eng in engs:
+            mcp_path = eng / "mcp.json"
+            diag = diagnose_mcp_config(mcp_path)
+            if diag is None:
+                print(f"  [ok]  {eng.name}: {mcp_path.name} clean")
+                continue
+            any_issue = True
+            print(f"  [!!]  {eng.name}: {len(diag['issues'])} issues")
+            for i in diag["issues"]:
+                print(f"          - {i}")
+            if args.fix:
+                changed = apply_mcp_migrations(mcp_path, diag["migrations"])
+                if changed:
+                    print(f"          ✓ migrated (backup: {mcp_path}.bak)")
+
+        if any_issue and not args.fix:
+            print()
+            print("加 --fix 自动修复: secagent doctor --fix")
+        return 0
+
     return 0
-
-
-if __name__ == "__main__":
     sys.exit(cli())
