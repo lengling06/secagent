@@ -335,18 +335,19 @@ def probe_llm_connection(cfg: dict) -> tuple[bool, str]:
     except Exception as e:
         return False, f"build_session failed: {e}"
     try:
-        # Tiniest possible call: empty tools, "hi"
-        resp = sess.send(
-            system="reply with the single word: ok",
-            new_messages=[{"role": "user", "content": "ping"}],
+        resp = sess.chat(
+            messages=[
+                {"role": "system", "content": "reply with the single word: ok"},
+                {"role": "user", "content": "ping"},
+            ],
             tools=[],
         )
-        text = (getattr(resp, "text", None) or "").strip().lower()
+        text = (getattr(resp, "content", "") or "").strip().lower()
         if not text:
             return False, "LLM returned empty text"
         return True, f"reply: {text[:80]}"
     except Exception as e:
-        return False, f"send failed: {e}"
+        return False, f"chat failed: {e}"
 
 
 def probe_sandbox() -> dict:

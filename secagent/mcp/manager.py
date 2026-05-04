@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, Optional
 
@@ -45,6 +46,7 @@ class MCPManager:
         self.config_path = engagement_dir / "mcp.json"
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
+        self._exit_stack: Optional[AsyncExitStack] = None
         self._sessions: dict[str, Any] = {}      # server_name -> ClientSession
         self._tools_meta: dict[str, dict] = {}   # server_name -> {target_keys, approval_required}
 
@@ -60,8 +62,21 @@ class MCPManager:
         fut.result(timeout=30)
 
     def stop(self) -> None:
-        if self._loop and self._loop.is_running():
+        if not self._loop:
+            return
+        if self._loop.is_running():
+            fut = asyncio.run_coroutine_threadsafe(self._shutdown(), self._loop)
+            try:
+                fut.result(timeout=10)
+            except Exception as e:
+                print(f"[MCP] shutdown warning: {e}")
             self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=10)
+        if not self._loop.is_closed():
+            self._loop.close()
+        self._loop = None
+        self._thread = None
 
     # ---------- async internals ----------
 
@@ -74,6 +89,7 @@ class MCPManager:
             return
 
         cfg = json.loads(self.config_path.read_text(encoding="utf-8"))
+        self._exit_stack = AsyncExitStack()
         for name, scfg in (cfg.get("mcpServers") or {}).items():
             try:
                 params = StdioServerParameters(
@@ -81,12 +97,8 @@ class MCPManager:
                     args=scfg.get("args", []),
                     env=scfg.get("env"),
                 )
-                # NOTE: real impl should keep contexts alive; this is a sketch.
-                # Productionize using AsyncExitStack and persistent tasks.
-                stdio_ctx = stdio_client(params)
-                read, write = await stdio_ctx.__aenter__()
-                session = ClientSession(read, write)
-                await session.__aenter__()
+                read, write = await self._exit_stack.enter_async_context(stdio_client(params))
+                session = await self._exit_stack.enter_async_context(ClientSession(read, write))
                 await session.initialize()
                 self._sessions[name] = session
                 self._tools_meta[name] = {
@@ -101,6 +113,13 @@ class MCPManager:
                     self._register_mcp_tool(name, t)
             except Exception as e:
                 print(f"[MCP] failed to connect {name}: {e}")
+
+    async def _shutdown(self) -> None:
+        self._sessions.clear()
+        self._tools_meta.clear()
+        if self._exit_stack:
+            await self._exit_stack.aclose()
+            self._exit_stack = None
 
     def _register_mcp_tool(self, server_name: str, tool: Any) -> None:
         registry_name = f"{server_name.replace('-', '_')}__{tool.name}"
