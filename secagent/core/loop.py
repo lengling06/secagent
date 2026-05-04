@@ -34,6 +34,20 @@ TAIL_LINES = 10
 WARN_RATIO    = 0.70
 COMPACT_RATIO = 0.78
 
+# Narration gate (P0-B): tool_call with empty content is rejected.
+# After MAX_NARR_RETRIES the LLM is allowed through with a warning so we don't
+# infinite-loop against a stubborn model / proxy.
+SOUL_TOKEN = "小霜大人"
+MAX_NARR_RETRIES = 2
+
+# P0-D: prepended to every next-turn user message so the rule survives long
+# context (system prompt gets diluted; user-msg prefix is rock-solid on
+# OpenAI-compat gateways).
+SOUL_REMINDER = (
+    f"[规则提醒] 工具调用前必须先用一句中文以 '{SOUL_TOKEN}，' 起头, "
+    f"写'<现状>; <目的>; <方法>'三段式 narration。沉默调工具会被框架拒绝。\n\n"
+)
+
 
 def _pretty(data: Any) -> str:
     if isinstance(data, (dict, list)):
@@ -128,6 +142,7 @@ def run_loop(
     exit_reason: dict = {}
     warned_compaction = False  # only warn once per session
     recent_calls: deque[str] = deque(maxlen=8)
+    narration_retries = 0  # P0-B: reject silent tool_calls up to MAX_NARR_RETRIES
 
     for turn in range(1, max_turns + 1):
         yield f"\n\n**Turn {turn}/{max_turns}**\n\n"
@@ -168,12 +183,41 @@ def run_loop(
 
         # === LLM call ===
         response = llm.chat(messages=messages, tools=tools_schema)
-        if response.content:
-            yield response.content + "\n"
-        elif response.tool_calls:
-            names = ", ".join(tc.name for tc in response.tool_calls[:4])
-            more = "" if len(response.tool_calls) <= 4 else f" 等 {len(response.tool_calls)} 个工具"
-            yield f"小霜大人，当前没有额外说明，我先按现有线索继续调用工具：{names}{more}。\n"
+
+        # === P0-B: narration gate ===
+        # 真 agent 必须先思考再行动. 拒绝沉默的 tool_calls (LLM 输出 content="" 但有
+        # tool_calls 的情况). 最多重试 MAX_NARR_RETRIES 次, 之后放行避免死循环.
+        content_str = (response.content or "").strip()
+        has_soul = SOUL_TOKEN in content_str
+        if response.tool_calls and (not content_str or not has_soul):
+            if narration_retries < MAX_NARR_RETRIES:
+                narration_retries += 1
+                if not content_str:
+                    yield f"\n🚫 [narration gate] 模型沉默调工具, 拒绝执行 (重试 {narration_retries}/{MAX_NARR_RETRIES})\n"
+                else:
+                    yield f"\n🚫 [narration gate] 没叫'{SOUL_TOKEN}', 拒绝执行 (重试 {narration_retries}/{MAX_NARR_RETRIES})\n"
+                # pop the bogus assistant turn from llm.history so we can retry cleanly.
+                # otherwise the orphan tool_calls in history will break OpenAI strict gateways.
+                hist = getattr(llm, "history", None)
+                if hist and hist[-1].get("role") == "assistant":
+                    hist.pop()
+                messages = [{
+                    "role": "user",
+                    "content": (
+                        f"[拒绝执行] 你直接调了工具但没说话(或没叫'{SOUL_TOKEN}'). 这违反规则。\n"
+                        f"重新来: 先用一句中文以 '{SOUL_TOKEN}，' 起头, "
+                        f"写'<现状>; <目的>; <方法>'三段式, 然后再调工具。\n"
+                        f"如果当前任务已完成, 直接调 task_complete(summary)。"
+                    )
+                }]
+                continue
+            else:
+                # gave up; let it through but mark it
+                yield f"\n⚠️ [narration gate] 重试 {MAX_NARR_RETRIES} 次仍无 narration, 放行避免死循环。换个模型试试。\n"
+
+        if content_str:
+            yield content_str + "\n"
+            narration_retries = 0  # reset on successful narration
 
         if not response.tool_calls:
             # plain text reply == task done (legacy exit; task_complete is preferred)
@@ -239,9 +283,10 @@ def run_loop(
 
         # next turn: only pass new user message + tool results
         # full history is kept inside the LLM session
+        # P0-D: prepend SOUL_REMINDER so rule survives long context
         messages = [{
             "role": "user",
-            "content": "\n".join(next_prompts),
+            "content": SOUL_REMINDER + "\n".join(next_prompts),
             "tool_results": tool_results,
         }]
 
