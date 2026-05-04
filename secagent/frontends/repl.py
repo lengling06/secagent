@@ -26,7 +26,7 @@ from secagent.llm.config import build_session, find_llm_config, load_llm_config
 from secagent.mcp.manager import MCPManager
 from secagent.safety.audit import AuditLog
 from secagent.safety.policy import PolicyEngine
-from secagent.tools.registry import build_default_registry
+from secagent.tools.registry import build_default_registry, mcp_servers_for_profile
 from secagent.tools.scope import Scope, load_scope, summarize_scope
 
 
@@ -205,19 +205,68 @@ def run_repl(
     policy = PolicyEngine()
 
     # 4. Tools + MCP
-    registry = build_default_registry()
-    mcp = MCPManager(engagement_dir, registry)
+    profile = "js_reverse"  # TODO: read from engagement config / CLI flag
+    registry = build_default_registry(profile=profile)
+
+    # MCP config migration: detect legacy entries (js-reverse-mcp / playwright)
+    # and offer to fix on the spot. This addresses "you forgot to update my
+    # ~/.secagent/mcp.json" — old engagements get migrated without manual edits.
+    try:
+        from secagent.cli.bootstrap import (
+            apply_mcp_migrations,
+            diagnose_mcp_config,
+        )
+        mcp_path = engagement_dir / "mcp.json"
+        diag = diagnose_mcp_config(mcp_path)
+        if diag and diag["has_legacy"]:
+            print()
+            print(f"[mcp] {mcp_path} contains legacy entries:")
+            for issue in diag["issues"]:
+                print(f"   - {issue}")
+            print("   迁移会自动备份到 mcp.json.bak。")
+            try:
+                ans = input("   迁移? [Y/n]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                ans = "n"
+                print()
+            if ans in ("", "y", "yes"):
+                changed = apply_mcp_migrations(mcp_path, diag["migrations"])
+                if changed:
+                    print(f"   ✓ migrated. backup at {mcp_path}.bak")
+            else:
+                print("   skipped (profile allowlist will skip playwright at runtime anyway).")
+    except Exception as e:
+        print(f"[mcp] migration check skipped: {e}")
+
+    mcp = MCPManager(
+        engagement_dir,
+        registry,
+        server_allowlist=mcp_servers_for_profile(profile),
+    )
     try:
         mcp.start()
     except Exception as e:
         print(f"[MCP] startup error (continuing without MCP): {e}")
 
     # 5. System prompt
-    #    layout (top-down): base system_sec.md → JS reverse SOP (default
-    #    methodology) → engagement-level sop.md (if user dropped one in) →
-    #    last-session checkpoint (if exists, survives across compaction) →
-    #    current scope summary.
-    system_prompt = _read_system_prompt()
+    #    layout (top-down):
+    #      soul.md           → 人格契约 (称呼/口吻/思考模式/拒绝模式)
+    #      system_sec.md     → 操作契约 (scope/审批/forbidden)
+    #      js_reverse_sop.md → 默认方法论
+    #      engagement/sop.md → 项目级覆盖
+    #      checkpoint        → 上次进度 (压缩后仍存活)
+    #      scope             → 当前 scope 摘要
+    soul_path = Path(__file__).resolve().parent.parent / "prompts" / "soul.md"
+    if soul_path.exists():
+        try:
+            system_prompt = soul_path.read_text(encoding="utf-8") + "\n\n---\n\n"
+        except Exception as e:
+            print(f"[warn] could not read soul.md: {e}")
+            system_prompt = ""
+    else:
+        system_prompt = ""
+
+    system_prompt += _read_system_prompt()
 
     # default JS reverse methodology, always loaded (this is the agent's
     # primary domain; engagement-level sop.md can override/extend if desired)
@@ -246,6 +295,17 @@ def run_repl(
                 print(f"checkpoint: 加载上次进度 ({len(ck_text)} chars from state/checkpoint.md)")
         except Exception as e:
             print(f"[warn] could not read checkpoint.md: {e}")
+
+    # P1-H: skill library — list available skills so the LLM knows what's at hand.
+    # Full content is loaded on demand via skill_read tool, not eagerly.
+    try:
+        from secagent.tools.skills import list_skills_summary
+        sk_summary = list_skills_summary()
+        system_prompt += "\n\n## Available skills\n\n" + sk_summary + (
+            "\n\n_Read full content via `skill_read(name)` when relevant._"
+        )
+    except Exception as e:
+        print(f"[warn] could not list skills: {e}")
 
     system_prompt += "\n\n## Current scope\n\n" + summarize_scope(scope)
 

@@ -82,10 +82,13 @@ def build_default_registry(profile: str = "js_reverse") -> ToolRegistry:
         findings,
         js_analysis,
         js_format,
+        plan as plan_tool,
         recon,
         shell,
+        skills as skills_tool,
         sourcemap,
         task_complete,
+        think,
     )
 
     reg = ToolRegistry()
@@ -106,8 +109,33 @@ def build_default_registry(profile: str = "js_reverse") -> ToolRegistry:
     sourcemap.register(reg)             # C15 sourcemap_fetch
     checkpoint.register(reg)            # B8 update_working_checkpoint
     task_complete.register(reg)         # C13 task_complete
+    think.register(reg)                 # P1-F: 强制结构化思考
+    plan_tool.register(reg)             # P1-G: 任务规划
+    skills_tool.register(reg)           # P1-H: skill library
 
     if profile in ("js_reverse_plus_recon", "pentest"):
         recon.register(reg)
 
     return reg
+
+
+# Profile-level MCP filter. Cuts down decision fatigue by removing redundant
+# servers (e.g. playwright + chrome-devtools both can navigate; for JS reverse
+# we only keep the observation-focused chrome-devtools).
+#
+# Server names must match keys in engagement-level `mcp.json`. Conventional
+# naming used in our examples:
+#   - "js-reverse"  → chrome-devtools-mcp (Google official, observation-focused)
+#   - "playwright"  → playwright-mcp (Microsoft, automation-focused)
+PROFILE_MCP_SERVERS: dict[str, list[str]] = {
+    "js_reverse":             ["js-reverse"],
+    "js_reverse_plus_recon":  ["js-reverse"],
+    "pentest":                ["js-reverse", "playwright"],   # full toolkit
+    "minimal":                [],                              # no MCP at all
+}
+
+
+def mcp_servers_for_profile(profile: str) -> Optional[list[str]]:
+    """Return the MCP server allowlist for a profile, or None to allow all
+    (which means: take whatever's in mcp.json without filtering)."""
+    return PROFILE_MCP_SERVERS.get(profile)

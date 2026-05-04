@@ -40,10 +40,26 @@ from secagent.tools.registry import ToolRegistry
 class MCPManager:
     """Owns a background asyncio loop that talks to MCP server subprocesses."""
 
-    def __init__(self, engagement_dir: Path, registry: ToolRegistry):
+    def __init__(
+        self,
+        engagement_dir: Path,
+        registry: ToolRegistry,
+        server_allowlist: Optional[list[str]] = None,
+        tool_allowlist: Optional[dict[str, list[str]]] = None,
+    ):
+        """
+        server_allowlist: only connect to these server names (None = all).
+                          Used by profile system to drop e.g. playwright when
+                          chrome-devtools is the primary observation backend.
+        tool_allowlist:   optional {server_name: [tool_name, ...]} to limit
+                          which tools from each server get registered. None
+                          for a server = expose all its tools.
+        """
         self.engagement_dir = engagement_dir
         self.registry = registry
         self.config_path = engagement_dir / "mcp.json"
+        self.server_allowlist = set(server_allowlist) if server_allowlist else None
+        self.tool_allowlist = tool_allowlist or {}
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._exit_stack: Optional[AsyncExitStack] = None
@@ -91,6 +107,11 @@ class MCPManager:
         cfg = json.loads(self.config_path.read_text(encoding="utf-8"))
         self._exit_stack = AsyncExitStack()
         for name, scfg in (cfg.get("mcpServers") or {}).items():
+            # Profile-level server filter (e.g. js_reverse profile keeps
+            # chrome-devtools-mcp only, drops playwright to cut decision fatigue).
+            if self.server_allowlist is not None and name not in self.server_allowlist:
+                print(f"[MCP] skipped: {name} (not in profile allowlist)")
+                continue
             try:
                 params = StdioServerParameters(
                     command=scfg["command"],
@@ -109,7 +130,10 @@ class MCPManager:
 
                 # discover tools
                 tools = await session.list_tools()
+                tool_filter = self.tool_allowlist.get(name)
                 for t in tools.tools:
+                    if tool_filter is not None and t.name not in tool_filter:
+                        continue
                     self._register_mcp_tool(name, t)
             except Exception as e:
                 print(f"[MCP] failed to connect {name}: {e}")
