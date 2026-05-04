@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Optional
 
 from secagent.llm.base import LLMResponse, LLMSession, ToolCall
@@ -154,8 +155,29 @@ class OpenAICompatSession(LLMSession):
                     # some 中转站偶尔吐出非法 JSON,降级成空 dict 让上层报错
                     args = {"_raw_arguments": tc.function.arguments}
                 tool_calls.append(ToolCall(id=tc.id, name=tc.function.name, args=args))
+        elif msg.content:
+            parsed_text, parsed_calls = self._parse_text_tool_calls(msg.content)
+            if parsed_calls:
+                tool_calls = parsed_calls
+                self.history[-1]["content"] = parsed_text
+                # Synthesize tool_calls on the assistant entry so subsequent
+                # role=tool messages (with tool_call_id=text-tool-N) have a
+                # matching parent — strict OpenAI gateways otherwise reject
+                # the next request as "tool message without preceding tool_calls".
+                self.history[-1]["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.args, ensure_ascii=False),
+                        },
+                    }
+                    for tc in parsed_calls
+                ]
 
-        return LLMResponse(content=msg.content or "", tool_calls=tool_calls)
+        content = self.history[-1]["content"] if self.history else (msg.content or "")
+        return LLMResponse(content=content or "", tool_calls=tool_calls)
 
     # ---------- helpers ----------
 
@@ -206,6 +228,84 @@ class OpenAICompatSession(LLMSession):
                 },
             })
         return out
+
+    @staticmethod
+    def _parse_text_tool_calls(text: str) -> tuple[str, list[ToolCall]]:
+        """Fallback parser for providers that dump tool-calls into assistant text.
+
+        DeepSeek-compatible gateways sometimes return DSML-like blocks in content
+        instead of populating ``message.tool_calls``. Parse the common format and
+        strip the raw block from user-visible text.
+        """
+        normalized = (
+            text.replace("＜", "<")
+                .replace("＞", ">")
+                .replace("／", "/")
+                .replace("｜", "|")
+                .replace("▁", "_")
+        )
+
+        # Inner tags often close with just ">" instead of "|>" (DeepSeek emits
+        # `<|DSML_invoke name="x">` for inner tags but `<|DSML_tool_calls|>`
+        # for the outer wrapper). Accept either by making the trailing pipe
+        # optional on both open and close tags.
+        invoke_re = re.compile(
+            r"<\|[^>]*invoke name=\"([^\"]+)\"\|?>(.*?)<\|?/[^>]*invoke\|?>",
+            re.DOTALL,
+        )
+        param_re = re.compile(
+            r"<\|[^>]*parameter name=\"([^\"]+)\"\|?>(.*?)<\|?/[^>]*parameter\|?>",
+            re.DOTALL,
+        )
+        item_re = re.compile(r"<item>(.*?)</item>", re.DOTALL)
+
+        calls: list[ToolCall] = []
+        for idx, match in enumerate(invoke_re.finditer(normalized), 1):
+            name = match.group(1).strip()
+            body = match.group(2)
+            args: dict[str, Any] = {}
+            for pm in param_re.finditer(body):
+                key = pm.group(1).strip()
+                raw = pm.group(2).strip()
+                if raw.startswith("<![CDATA[") and raw.endswith("]]>"):
+                    raw = raw[9:-3]
+                items = [x.strip() for x in item_re.findall(raw)]
+                if items:
+                    args[key] = [OpenAICompatSession._coerce_text_value(x) for x in items]
+                else:
+                    args[key] = OpenAICompatSession._coerce_text_value(raw)
+            calls.append(ToolCall(id=f"text-tool-{idx}", name=name, args=args))
+
+        cleaned = normalized
+        if calls:
+            cleaned = invoke_re.sub("", cleaned)
+            cleaned = re.sub(r"<\|[^>]*tool_calls\|>|<\|/[^>]*tool_calls\|>", "", cleaned)
+            cleaned = cleaned.strip()
+        return cleaned, calls
+
+    @staticmethod
+    def _coerce_text_value(raw: str) -> Any:
+        text = raw.strip()
+        if not text:
+            return ""
+        if text in ("true", "false"):
+            return text == "true"
+        if re.fullmatch(r"-?\d+", text):
+            try:
+                return int(text)
+            except ValueError:
+                return text
+        if re.fullmatch(r"-?\d+\.\d+", text):
+            try:
+                return float(text)
+            except ValueError:
+                return text
+        if text.startswith("{") or text.startswith("["):
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return text
+        return text
 
     # ---------- history I/O for Mixin migration ----------
 
@@ -339,4 +439,3 @@ HMAC 标志、已尝试失败的路径）
 - 第三人称客观陈述, 不要写 "我"
 - 用户姓名是 "小霜", 但摘要里 **不要** 写 "小霜大人" 称呼 (那是给主对话用的, 摘要只记事实)
 """
-

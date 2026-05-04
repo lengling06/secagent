@@ -10,7 +10,8 @@ from secagent.core.outcome import StepOutcome
 from secagent.tools.registry import ToolRegistry
 
 
-_MAX_READ = 40_000  # bytes
+_MAX_READ = 12_000  # chars returned to the model
+_DEFAULT_LINE_SPAN = 120
 
 
 def _resolve(eng_dir: Path, p: str) -> Path:
@@ -31,15 +32,49 @@ def _do_read(args: dict, ctx: dict) -> StepOutcome:
     if not p:
         return StepOutcome.error("file_read: path required")
     target = _resolve(eng_dir, p)
+    if not _within(eng_dir, target):
+        return StepOutcome.error(f"file_read: '{target}' outside engagement dir")
     if not target.exists():
         return StepOutcome.error(f"file_read: not found: {target}")
     try:
         data = target.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
         return StepOutcome.error(f"file_read: {e}")
-    if len(data) > _MAX_READ:
-        data = data[:_MAX_READ] + f"\n... [truncated, {len(data)-_MAX_READ} more chars]"
-    return StepOutcome.cont(data=data, prompt="continue")
+
+    start_line = int(args.get("start_line") or 1)
+    if start_line < 1:
+        start_line = 1
+    end_line = args.get("end_line")
+
+    lines = data.splitlines()
+    total_lines = len(lines)
+    if end_line is None:
+        end_line = min(total_lines, start_line + _DEFAULT_LINE_SPAN - 1)
+    else:
+        end_line = int(end_line)
+    if end_line < start_line:
+        return StepOutcome.error("file_read: end_line must be >= start_line")
+
+    chunk = "\n".join(lines[start_line - 1:end_line])
+    truncated = False
+    if len(chunk) > _MAX_READ:
+        chunk = chunk[:_MAX_READ] + f"\n... [truncated, {len(chunk)-_MAX_READ} more chars]"
+        truncated = True
+
+    return StepOutcome.cont(
+        data={
+            "path": str(target.relative_to(eng_dir) if target.is_relative_to(eng_dir) else target),
+            "start_line": start_line,
+            "end_line": min(end_line, total_lines),
+            "total_lines": total_lines,
+            "truncated": truncated or end_line < total_lines,
+            "content": chunk,
+        },
+        prompt=(
+            f"read {target.name}:{start_line}-{min(end_line, total_lines)}; "
+            "if needed, request a narrower range instead of rereading the whole file."
+        ),
+    )
 
 
 def _do_write(args: dict, ctx: dict) -> StepOutcome:
@@ -85,7 +120,11 @@ def register(reg: ToolRegistry) -> None:
         description="Read a file. Path is relative to engagement dir (or absolute).",
         parameters={
             "type": "object",
-            "properties": {"path": {"type": "string"}},
+            "properties": {
+                "path": {"type": "string"},
+                "start_line": {"type": "integer", "description": "1-based start line; default 1"},
+                "end_line": {"type": "integer", "description": "1-based end line; default start_line + 119"},
+            },
             "required": ["path"],
         },
         fn=_do_read,

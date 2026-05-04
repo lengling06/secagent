@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Generator, Optional
 
@@ -38,6 +39,20 @@ def _pretty(data: Any) -> str:
     if isinstance(data, (dict, list)):
         return json.dumps(data, ensure_ascii=False, indent=2)
     return str(data)
+
+
+def _user_preview(data: Any) -> str:
+    if isinstance(data, dict) and "content" in data and isinstance(data["content"], str):
+        meta = {k: v for k, v in data.items() if k != "content"}
+        preview = data["content"]
+        if len(preview) > 500:
+            preview = preview[:500] + f"\n... [truncated, {len(data['content'])-500} more chars]"
+        meta_text = json.dumps(meta, ensure_ascii=False, indent=2)
+        return f"{meta_text}\n--- content preview ---\n{preview}"
+    rendered = _pretty(data)
+    if len(rendered) > 1000:
+        rendered = rendered[:1000] + f"\n... [truncated, {len(rendered)-1000} more chars]"
+    return rendered
 
 
 def _maybe_offload(
@@ -112,6 +127,7 @@ def run_loop(
     handler.max_turns = max_turns
     exit_reason: dict = {}
     warned_compaction = False  # only warn once per session
+    recent_calls: deque[str] = deque(maxlen=8)
 
     for turn in range(1, max_turns + 1):
         yield f"\n\n**Turn {turn}/{max_turns}**\n\n"
@@ -154,6 +170,10 @@ def run_loop(
         response = llm.chat(messages=messages, tools=tools_schema)
         if response.content:
             yield response.content + "\n"
+        elif response.tool_calls:
+            names = ", ".join(tc.name for tc in response.tool_calls[:4])
+            more = "" if len(response.tool_calls) <= 4 else f" 等 {len(response.tool_calls)} 个工具"
+            yield f"小霜大人，当前没有额外说明，我先按现有线索继续调用工具：{names}{more}。\n"
 
         if not response.tool_calls:
             # plain text reply == task done (legacy exit; task_complete is preferred)
@@ -169,12 +189,24 @@ def run_loop(
             name, args, tid = tc.name, tc.args, tc.id
             yield f"\n🛠️  `{name}` args={_pretty(args)[:200]}\n"
 
-            handler.current_turn = turn
-            outcome: StepOutcome = handler.dispatch(name, args)
+            try:
+                fingerprint = f"{name}:{json.dumps(args, ensure_ascii=False, sort_keys=True)}"
+            except TypeError:
+                fingerprint = f"{name}:{repr(args)}"
+
+            if recent_calls and fingerprint == recent_calls[-1]:
+                outcome = StepOutcome.error(
+                    f"Repeated identical tool call blocked: {name}. "
+                    "Choose a narrower range, a different tool, or summarize and stop."
+                )
+            else:
+                recent_calls.append(fingerprint)
+                handler.current_turn = turn
+                outcome = handler.dispatch(name, args)
 
             # display: short preview to user (UX), full detail goes to LLM via tool_results
             if outcome.data is not None:
-                yield f"```\n{_pretty(outcome.data)[:1500]}\n```\n"
+                yield f"```\n{_user_preview(outcome.data)}\n```\n"
 
             # accumulate
             if outcome.should_exit:

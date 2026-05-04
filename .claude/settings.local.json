@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -sSL --max-time 30 https://github.com/lsdefine/GenericAgent)",
+      "WebSearch",
+      "WebFetch(domain:deepwiki.com)",
+      "Bash(python *)"
+    ]
+  }
+}
