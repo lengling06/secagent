@@ -64,6 +64,10 @@ class OpenAICompatSession(LLMSession):
             from openai import OpenAI
         except ImportError as e:
             raise ImportError("pip install openai") from e
+        try:
+            import httpx
+        except ImportError as e:
+            raise ImportError("pip install httpx") from e
 
         self.model = model
         self.max_tokens = max_tokens
@@ -78,11 +82,21 @@ class OpenAICompatSession(LLMSession):
         if not key:
             raise ValueError(f"No API key for backend {self.name}")
 
+        # P0-E: 硬超时. timeout 参数现在是 read 上限, connect 固定 10s, 防 SSL hang.
+        # 之前 SDK 的 timeout=120 不会传给底层 httpcore socket recv, 中转站
+        # TCP 层卡死时进程要 Ctrl+C 才出来.
+        http_timeout = httpx.Timeout(
+            connect=10.0,
+            read=float(timeout),
+            write=float(timeout),
+            pool=10.0,
+        )
+
         self._client = OpenAI(
             base_url=base_url,
             api_key=key,
             default_headers=default_headers or {},
-            timeout=timeout,
+            timeout=http_timeout,
             max_retries=max_retries,
         )
 
