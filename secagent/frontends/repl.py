@@ -190,6 +190,8 @@ def run_repl(
         print("  hint: run `secagent init` to (re)configure", file=sys.stderr)
         return 3
     print(f"llm:   {getattr(llm, 'name', '?')} / {getattr(llm, 'model', '?')}")
+    cw = getattr(llm, 'context_window', 200_000)
+    print(f"window: {cw:,} tok  (warn @70%, compact @78%)")
 
     # 3. Safety
     audit = AuditLog(engagement_dir)

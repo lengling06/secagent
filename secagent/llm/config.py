@@ -110,14 +110,14 @@ def _build_single(name: str, bcfg: dict) -> LLMSession:
 
     if btype == "anthropic":
         from secagent.llm.anthropic_session import AnthropicSession
-        return AnthropicSession(
+        sess = AnthropicSession(
             model=bcfg["model"],
             api_key=api_key,
             max_tokens=int(bcfg.get("max_tokens", 8192)),
         )
     elif btype in ("openai", "openai_compat"):
         from secagent.llm.openai_session import OpenAICompatSession
-        return OpenAICompatSession(
+        sess = OpenAICompatSession(
             model=bcfg["model"],
             api_key=api_key,
             base_url=bcfg.get("base_url", "https://api.openai.com/v1"),
@@ -131,6 +131,12 @@ def _build_single(name: str, bcfg: dict) -> LLMSession:
         )
     else:
         raise ValueError(f"unknown backend type: {btype}")
+
+    # Per-backend override of context window (used by 70%/78% ratio thresholds).
+    # 中转站经常偷偷截断比模型官方窗口小, 在 llm.yaml 里用 context_window 设保守值。
+    if "context_window" in bcfg and bcfg["context_window"]:
+        sess.context_window = int(bcfg["context_window"])
+    return sess
 
 
 def _resolve_api_key(bcfg: dict) -> str:
