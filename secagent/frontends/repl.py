@@ -210,14 +210,41 @@ def run_repl(
     except Exception as e:
         print(f"[MCP] startup error (continuing without MCP): {e}")
 
-    # 5. System prompt (optionally extend with engagement-level SOP)
+    # 5. System prompt
+    #    layout (top-down): base system_sec.md → JS reverse SOP (default
+    #    methodology) → engagement-level sop.md (if user dropped one in) →
+    #    last-session checkpoint (if exists, survives across compaction) →
+    #    current scope summary.
     system_prompt = _read_system_prompt()
+
+    # default JS reverse methodology, always loaded (this is the agent's
+    # primary domain; engagement-level sop.md can override/extend if desired)
+    sop_default = Path(__file__).resolve().parent.parent / "prompts" / "js_reverse_sop.md"
+    if sop_default.exists():
+        try:
+            system_prompt += "\n\n## SOP — JS Reverse Engineering\n\n" + sop_default.read_text(encoding="utf-8")
+        except Exception as e:
+            print(f"[warn] could not read js_reverse_sop.md: {e}")
+
+    # engagement-level override / extension
     sop_path = engagement_dir / "sop.md"
     if sop_path.exists():
         try:
             system_prompt += "\n\n## Engagement SOP\n\n" + sop_path.read_text(encoding="utf-8")
         except Exception as e:
             print(f"[warn] could not read sop.md: {e}")
+
+    # last-session checkpoint (B9: survives across context compaction)
+    ck = engagement_dir / "state" / "checkpoint.md"
+    if ck.exists():
+        try:
+            ck_text = ck.read_text(encoding="utf-8").strip()
+            if ck_text:
+                system_prompt += "\n\n## Resume from last checkpoint\n\n" + ck_text
+                print(f"checkpoint: 加载上次进度 ({len(ck_text)} chars from state/checkpoint.md)")
+        except Exception as e:
+            print(f"[warn] could not read checkpoint.md: {e}")
+
     system_prompt += "\n\n## Current scope\n\n" + summarize_scope(scope)
 
     # 6. Callbacks

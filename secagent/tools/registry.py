@@ -64,22 +64,50 @@ class ToolRegistry:
         return list(self._tools.keys())
 
 
-def build_default_registry() -> ToolRegistry:
-    """Wire up the default native tool set."""
+def build_default_registry(profile: str = "js_reverse") -> ToolRegistry:
+    """Wire up the default native tool set.
+
+    Profiles:
+      - "js_reverse" (default): JS 逆向 + 文件 + checkpoint + 审计相关。**不挂 recon**, 防止
+        模型一上来就 subfinder / nmap 跑偏。
+      - "js_reverse_plus_recon": 上面 + recon 套件 (subdomain_enum / port_scan / http_probe /
+        dns_resolve)。需要找泄漏的 staging / 备用 host 时切到这个 profile。
+      - "pentest": 等价于 plus_recon, 别名。
+      - "minimal": 只有 ask_user / add_finding / file_*, 调试用。
+    """
     from secagent.tools import (
         ask_user,
+        checkpoint,
         filesystem,
         findings,
         js_analysis,
+        js_format,
         recon,
         shell,
+        sourcemap,
+        task_complete,
     )
 
     reg = ToolRegistry()
+
+    if profile == "minimal":
+        ask_user.register(reg)
+        findings.register(reg)
+        filesystem.register(reg)
+        return reg
+
+    # js_reverse / js_reverse_plus_recon / pentest 都包含基础套件
     shell.register(reg)
     filesystem.register(reg)
     ask_user.register(reg)
     findings.register(reg)
-    recon.register(reg)
     js_analysis.register(reg)
+    js_format.register(reg)             # C14 js_beautify
+    sourcemap.register(reg)             # C15 sourcemap_fetch
+    checkpoint.register(reg)            # B8 update_working_checkpoint
+    task_complete.register(reg)         # C13 task_complete
+
+    if profile in ("js_reverse_plus_recon", "pentest"):
+        recon.register(reg)
+
     return reg

@@ -97,8 +97,11 @@ allowed_operations:
   - file_write
   - ask_user
   - add_finding
+  - checkpoint_write
+  - task_complete
   - code_diff
   - har_analyze
+  - js_beautify
   - js_execute      # sandbox-protected; require_approval applies
   - shell           # gated by target scope per-call
 
@@ -144,22 +147,28 @@ out_of_scope:
   ips: []
 
 allowed_operations:
+  # === JS 逆向核心（默认开启） ===
   - http_request
-  - http_probe
-  - dns_resolve
-  - port_scan
-  - subdomain_enum
+  - http_probe          # 单点拉 JS / 主页 / sourcemap, 不是批量探活
   - js_reverse
   - js_execute
+  - js_beautify
+  - sourcemap_fetch
   - har_analyze
   - code_diff
-  - vulnerability_scan
   - browser_automation
   - shell
   - file_read
   - file_write
   - ask_user
   - add_finding
+  - checkpoint_write
+  - task_complete
+  # === Recon (默认关闭, 需要时取消注释 + scope.yaml 同步) ===
+  # - dns_resolve
+  # - subdomain_enum
+  # - port_scan
+  # - vulnerability_scan
 
 forbidden_operations:
   - dos
@@ -177,6 +186,10 @@ require_approval:
   - js_reverse__evaluate_script
   - js_reverse__inject_before_load
   - js_reverse__trace_function
+  # 默认 recon 不在 allowed 里; 若你取消注释开启 recon, 把这几条也加上 require_approval:
+  # - subdomain_enum
+  # - port_scan
+  # - vulnerability_scan
 
 network:
   proxy: null

@@ -13,6 +13,8 @@ dependencies = [
     "rich>=13.0.0",            # REPL 漂亮输出
     "prompt_toolkit>=3.0.0",   # REPL 输入
     "mcp>=1.0.0",              # 官方 MCP Python SDK
+    "tiktoken>=0.7.0",         # token 估算 (中转站 usage 字段不可信)
+    "jsbeautifier>=1.15.0",    # js_beautify 工具
 ]
 
 [project.optional-dependencies]

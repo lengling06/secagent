@@ -49,6 +49,7 @@ def _resolve_engagement(name: Optional[str]) -> Optional[Path]:
 def cli() -> int:
     parser = argparse.ArgumentParser(prog="secagent", description="Security-domain agent")
     sub = parser.add_subparsers(dest="cmd")
+    default_max_turns = 40
 
     # `secagent init`
     sub.add_parser("init", help="One-shot setup wizard (LLM config + default engagement)")
@@ -59,7 +60,7 @@ def cli() -> int:
                         help="Engagement name (under ~/.secagent/engagements/) or path. Default: 'default'.")
     p_chat.add_argument("--llm", "-l", default=None,
                         help="Backend name in llm.yaml; omit for default_backend / mixin.")
-    p_chat.add_argument("--max-turns", type=int, default=40)
+    p_chat.add_argument("--max-turns", type=int, default=default_max_turns)
 
     # `secagent target <url>`
     p_target = sub.add_parser("target", help="Spawn an engagement scoped to a URL, then chat")
@@ -67,13 +68,13 @@ def cli() -> int:
     p_target.add_argument("--authorized-by", default=None,
                           help="Free-text. Default: 'self (local analysis)'.")
     p_target.add_argument("--llm", "-l", default=None)
-    p_target.add_argument("--max-turns", type=int, default=40)
+    p_target.add_argument("--max-turns", type=int, default=default_max_turns)
 
     # power-user / dev (repo-relative engagements/)
     p_repl = sub.add_parser("repl", help="(dev) chat with engagement under <repo>/engagements/")
     p_repl.add_argument("--engagement", "-e", required=True)
     p_repl.add_argument("--llm", "-l", default=None)
-    p_repl.add_argument("--max-turns", type=int, default=40)
+    p_repl.add_argument("--max-turns", type=int, default=default_max_turns)
 
     p_audit = sub.add_parser("audit", help="Tail audit log of an engagement")
     p_audit.add_argument("--engagement", "-e", default=None)
@@ -166,7 +167,11 @@ def cli() -> int:
             eng_dir,
             llm_name=args.llm,
             max_turns=args.max_turns,
-            initial_input=f"我想分析这个目标: {args.url}。按 SOP 进行。",
+            initial_input=(
+                f"目标: {args.url}\n"
+                f"开始 JS 逆向。先做最小探测 (主页可达性 + 列出加载的 JS 资源 + "
+                f"猜测哪个 bundle 负责签名/加密)，给出初步判断后等我确认再继续深入。"
+            ),
         )
 
     # ============================================================

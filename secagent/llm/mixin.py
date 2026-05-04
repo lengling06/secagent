@@ -59,6 +59,25 @@ class MixinSession(LLMSession):
         for b in self.backends.values():
             b.reset_tool_schema_cache()
 
+    # -------- context management (B10) — delegate to active backend --------
+
+    @property
+    def context_window(self) -> int:
+        return getattr(self.active, "context_window", 200_000)
+
+    def approx_tokens(self) -> int:
+        return self.active.approx_tokens()
+
+    def compact_if_needed(self, context_window: int = 200_000, ratio: float = 0.78,
+                          keep_recent: int = 6, summarizer_model: Optional[str] = None) -> bool:
+        cw = context_window or self.context_window
+        return self.active.compact_if_needed(
+            context_window=cw,
+            ratio=ratio,
+            keep_recent=keep_recent,
+            summarizer_model=summarizer_model,
+        )
+
     def switch_to(self, name: str) -> None:
         if name not in self.backends:
             raise KeyError(name)
